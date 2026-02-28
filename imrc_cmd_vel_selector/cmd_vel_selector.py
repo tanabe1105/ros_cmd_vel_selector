@@ -89,8 +89,8 @@ class cmd_vel_selector(Node):
         # 前回の結果を保持
         pre_target_flag = self.target_flag
         # 停止のための変数
-        self.target_flag = (now - self.target_timer < 2.0)
-        self.twist_flag = (now - self.twist_timer < 2.0)
+        self.target_flag = (now - self.target_timer < 0.9)
+        self.twist_flag = (now - self.twist_timer < 0.9)
         
         # target_flagがTrueからFalseに変わった場合、購読を解除
         if pre_target_flag and not self.target_flag:
