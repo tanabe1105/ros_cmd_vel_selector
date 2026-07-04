@@ -18,9 +18,18 @@ class cmd_vel_selector(Node):
         self.mode_ready = "STAND BY"
         self.mode_ready_sub = self.create_subscription(String, '/mode_ready', self.mode_ready_callback, 10)
         
+        # パラメータの宣言 (初期値と型の設定)
+        self.declare_parameter('interval', 0.01)
+        self.declare_parameter('target_reset_threshold', 1.0)
+        self.declare_parameter('twist_reset_threshold', 0.1)
         
+        # パラメータの取得
+        interval = self.get_parameter('interval').get_parameter_value().double_value
+        self.target_reset_threshold = self.get_parameter('target_reset_threshold').get_parameter_value().double_value
+        self.twist_reset_threshold = self.get_parameter('twist_reset_threshold').get_parameter_value().double_value
+
         # 出力先
-        self.cmd_vel_uart_pub = self.create_publisher(Twist, '/cmd_vel_uart', 10)
+        self.cmd_vel_can_pub = self.create_publisher(Twist, '/cmd_vel_can', 10)
         
         # 現在購読しているsubscriber（最初は None） 
         self.current_sub = None 
@@ -33,15 +42,15 @@ class cmd_vel_selector(Node):
         
         # 値が更新されていなかったとき、すべて0のTwistを出す
         self.zero_twist = Twist()
-        # 監視周期は0.1秒
-        self.create_timer(0.1, self.watch_timer)
+        # 監視周期はinterval
+        self.create_timer(interval, self.watch_timer)
         self.target_timer = time.time() # current_velがpubされているか
         self.twist_timer = time.time() # twistがpubされているか
         # それぞれの値が変化しているか
         self.target_flag = False
         self.twist_flag = False
         
-        # どの値をcmd_vel_uartに流すか
+        # どの値をcmd_vel_canに流すか
         self.target_sub = self.create_subscription(String, '/current_vel', self.target_selecter_callback, 10)
     
     def mode_ready_callback(self, msg):
@@ -76,10 +85,10 @@ class cmd_vel_selector(Node):
         # self.vel.linear.y = msg.linear.y
         # self.vel.angular.z = msg.angular.z
         if(self.mode_ready == "GO"):
-            self.cmd_vel_uart_pub.publish(msg)
+            self.cmd_vel_can_pub.publish(msg)
             self.get_logger().info(f'MODE = \"GO\", Lx={msg.linear.x} Ly={msg.linear.y} Az={msg.angular.z}')
         else:
-            self.cmd_vel_uart_pub.publish(self.zero_twist)
+            self.cmd_vel_can_pub.publish(self.zero_twist)
             self.get_logger().info(f'MODE = \"STAND BY\"')
             self.get_logger().info(f'Receiving: Lx={msg.linear.x} Ly={msg.linear.y} Az={msg.angular.z}')
 
@@ -89,10 +98,10 @@ class cmd_vel_selector(Node):
         # 前回の結果を保持
         pre_target_flag = self.target_flag
         # 停止のための変数
-        self.target_flag = (now - self.target_timer < 0.9)
-        self.twist_flag = (now - self.twist_timer < 0.9)
+        self.target_flag = (now - self.target_timer < self.target_reset_threshold)
+        self.twist_flag = (now - self.twist_timer < self.twist_reset_threshold)
         
-        # target_flagがTrueからFalseに変わった場合、購読を解除
+        # target_flagがTrueからFalseに変わった場合、購読を解除 targetが一定期間以上更新されなかったとき
         if pre_target_flag and not self.target_flag:
             if self.current_sub is not None:
                 self.destroy_subscription(self.current_sub)
@@ -101,12 +110,12 @@ class cmd_vel_selector(Node):
                 self.current_topic = None
         
         if self.mode_ready == "STAND BY":
-            self.get_logger().info("STAND BY状態のため、cmd_vel_uartは送信されません。")
-            self.cmd_vel_uart_pub.publish(self.zero_twist) 
+            self.get_logger().info("STAND BY状態のため、cmd_vel_canは送信されません。")
+            self.cmd_vel_can_pub.publish(self.zero_twist) 
         elif (self.target_flag == False) or (self.twist_flag == False):
-            self.get_logger().info("入力が検知されませんでした") 
+            # self.get_logger().info("入力が検知されませんでした") 
             # self.get_logger().info('Lx=0.0 Ly=0.0 Az=0.0')
-            self.cmd_vel_uart_pub.publish(self.zero_twist) 
+            self.cmd_vel_can_pub.publish(self.zero_twist) 
 
 def main():
     rclpy.init()
